@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
+	"net/http"
 	"net/url"
 	"os"
 	"regexp"
@@ -1023,6 +1024,7 @@ func ChannelsHandler(c *fiber.Ctx) error {
 	splitCategory := strings.TrimSpace(c.Query("c"))
 	languages := strings.TrimSpace(c.Query("l"))
 	skipGenres := strings.TrimSpace(c.Query("sg"))
+	subFilter := strings.TrimSpace(c.Query("sub"))
 	apiResponse, err := television.Channels()
 	if err != nil {
 		return ErrorMessageHandler(c, err)
@@ -1033,7 +1035,7 @@ func ChannelsHandler(c *fiber.Ctx) error {
 	// Check if the query parameter "type" is set to "m3u"
 	if c.Query("type") == "m3u" {
 		// Create an M3U playlist
-		m3uContent := GenerateM3UPlaylist(apiResponse.Result, hostURL, quality, splitCategory, languages, skipGenres)
+		m3uContent := GenerateM3UPlaylist(apiResponse.Result, hostURL, quality, splitCategory, languages, skipGenres, subFilter)
 
 		// Set the Content-Disposition header for file download
 		c.Set("Content-Disposition", "attachment; filename=jiotv_playlist.m3u")
@@ -1264,7 +1266,8 @@ func PlaylistHandler(c *fiber.Ctx) error {
 	splitCategory := c.Query("c")
 	languages := c.Query("l")
 	skipGenres := c.Query("sg")
-	return c.Redirect("/channels?type=m3u&q="+quality+"&c="+splitCategory+"&l="+languages+"&sg="+skipGenres, fiber.StatusMovedPermanently)
+	subFilter := c.Query("sub")
+	return c.Redirect("/channels?type=m3u&q="+quality+"&c="+splitCategory+"&l="+languages+"&sg="+skipGenres+"&sub="+subFilter, fiber.StatusMovedPermanently)
 }
 
 // ImageHandler loads image from JioTV server
@@ -1273,12 +1276,27 @@ func ImageHandler(c *fiber.Ctx) error {
 	return internalUtils.ProxyRequest(c, url, TV.Client, REQUEST_USER_AGENT)
 }
 
+// DASHTimeHandler serves a UTC timestamp for DASH clock sync (UTCTiming).
+// The proxied MPD's segment timeline is stamped with the upstream CDN's
+// clock, so this returns the CDN's extrapolated clock when one has been
+// observed (see recordCdnPublishTime), falling back to the machine clock
+// before the first MPD fetch. Serving the machine clock directly stalls live
+// playback whenever it differs from the CDN clock: players compute the live
+// edge minutes away from the actual segments.
 func DASHTimeHandler(c *fiber.Ctx) error {
-	return c.SendString(time.Now().UTC().Format("2006-01-02T15:04:05.000Z"))
+	now := time.Now().UTC()
+	if cdn, ok := cdnNow(); ok {
+		now = cdn.UTC()
+	}
+	// The Shaka player reads the Date header when clockSyncUri uses the
+	// http-head UTCTiming scheme, so make sure it is present even if the
+	// HTTP framework does not add it automatically.
+	c.Set("Date", now.Format(http.TimeFormat))
+	return c.SendString(now.Format("2006-01-02T15:04:05.000Z"))
 }
 
 // GenerateM3UPlaylist generates an M3U playlist string from a list of channels
-func GenerateM3UPlaylist(channels []television.Channel, hostURL, quality, splitCategory, languages, skipGenres string) string {
+func GenerateM3UPlaylist(channels []television.Channel, hostURL, quality, splitCategory, languages, skipGenres, subFilter string) string {
 	var m3uContent strings.Builder
 	m3uContent.WriteString("#EXTM3U x-tvg-url=\"")
 	m3uContent.WriteString(hostURL)
@@ -1292,6 +1310,17 @@ func GenerateM3UPlaylist(channels []television.Channel, hostURL, quality, splitC
 
 		if skipGenres != "" && utils.ContainsString(television.CategoryMap[channel.Category], strings.Split(skipGenres, ",")) {
 			continue
+		}
+
+		switch subFilter {
+		case "hide":
+			if channel.RequiresSubscription {
+				continue
+			}
+		case "only":
+			if !channel.RequiresSubscription {
+				continue
+			}
 		}
 
 		var channelURL string
