@@ -631,8 +631,16 @@ func LiveHandler(c *fiber.Ctx) error {
 }
 
 // LiveQualityHandler handles the live channel stream route `/live/:quality/:id.m3u8`.
+// When quality is "hls" (e.g. `/live/hls/:id`), it accepts an optional `?q=` query parameter.
 func LiveQualityHandler(c *fiber.Ctx) error {
 	quality := c.Params("quality")
+	if quality == "hls" {
+		if q := c.Query("q"); q != "" {
+			quality = q
+		} else {
+			quality = "auto"
+		}
+	}
 	id := c.Params("id")
 	// remove suffix .m3u8 if exists
 	id = strings.Replace(id, ".m3u8", "", 1)
@@ -678,6 +686,7 @@ func LiveQualityHandler(c *fiber.Ctx) error {
 	}
 
 	// quote url as it will be passed as a query parameter
+	// It is required to quote the url as it may contain special characters like ? and &
 	coded_url, err := secureurl.EncryptURL(liveURL)
 	if err != nil {
 		utils.Log.Println(err)
@@ -1086,6 +1095,7 @@ func ChannelsHandler(c *fiber.Ctx) error {
 	languages := strings.TrimSpace(c.Query("l"))
 	skipGenres := strings.TrimSpace(c.Query("sg"))
 	subFilter := strings.TrimSpace(c.Query("sub"))
+	format := strings.TrimSpace(c.Query("format"))
 	apiResponse, err := television.Channels()
 	if err != nil {
 		return ErrorMessageHandler(c, err)
@@ -1096,7 +1106,7 @@ func ChannelsHandler(c *fiber.Ctx) error {
 	// Check if the query parameter "type" is set to "m3u"
 	if c.Query("type") == "m3u" {
 		// Create an M3U playlist
-		m3uContent := GenerateM3UPlaylist(apiResponse.Result, hostURL, quality, splitCategory, languages, skipGenres, subFilter)
+		m3uContent := GenerateM3UPlaylist(apiResponse.Result, hostURL, quality, splitCategory, languages, skipGenres, subFilter, format)
 
 		// Set the Content-Disposition header for file download
 		c.Set("Content-Disposition", "attachment; filename=jiotv_playlist.m3u")
@@ -1328,7 +1338,8 @@ func PlaylistHandler(c *fiber.Ctx) error {
 	languages := c.Query("l")
 	skipGenres := c.Query("sg")
 	subFilter := c.Query("sub")
-	return c.Redirect("/channels?type=m3u&q="+quality+"&c="+splitCategory+"&l="+languages+"&sg="+skipGenres+"&sub="+subFilter, fiber.StatusMovedPermanently)
+	format := c.Query("format")
+	return c.Redirect("/channels?type=m3u&q="+quality+"&c="+splitCategory+"&l="+languages+"&sg="+skipGenres+"&sub="+subFilter+"&format="+format, fiber.StatusFound)
 }
 
 // ImageHandler loads image from JioTV server
@@ -1357,7 +1368,7 @@ func DASHTimeHandler(c *fiber.Ctx) error {
 }
 
 // GenerateM3UPlaylist generates an M3U playlist string from a list of channels
-func GenerateM3UPlaylist(channels []television.Channel, hostURL, quality, splitCategory, languages, skipGenres, subFilter string) string {
+func GenerateM3UPlaylist(channels []television.Channel, hostURL, quality, splitCategory, languages, skipGenres, subFilter, format string) string {
 	var m3uContent strings.Builder
 	m3uContent.WriteString("#EXTM3U x-tvg-url=\"")
 	m3uContent.WriteString(hostURL)
@@ -1387,7 +1398,13 @@ func GenerateM3UPlaylist(channels []television.Channel, hostURL, quality, splitC
 		var channelURL string
 		var kodiProps string
 
-		if EnableDRM && utils.ContainsString(channel.ID, drmList) {
+		if strings.EqualFold(format, "hls") {
+			if quality != "" {
+				channelURL = fmt.Sprintf("%s/live/hls/%s?q=%s", hostURL, channel.ID, quality)
+			} else {
+				channelURL = fmt.Sprintf("%s/live/hls/%s", hostURL, channel.ID)
+			}
+		} else if EnableDRM && utils.ContainsString(channel.ID, drmList) {
 			if quality != "" {
 				channelURL = fmt.Sprintf("%s/live/mpd/%s?q=%s", hostURL, channel.ID, quality)
 			} else {

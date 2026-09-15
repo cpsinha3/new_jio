@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -223,6 +224,52 @@ func TestLiveQualityHandler(t *testing.T) {
 				t.Errorf("LiveQualityHandler() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestLiveQualityHandler_HLS(t *testing.T) {
+	tempDir := t.TempDir()
+	customChannelsFile := filepath.Join(tempDir, "test_custom_channels.json")
+
+	customChannelsData := map[string]interface{}{
+		"channels": []map[string]interface{}{
+			{
+				"id":       "my_stream",
+				"name":     "Test Custom Channel",
+				"url":      "https://example.com/live/stream.m3u8",
+				"logo_url": "https://example.com/logo.png",
+				"category": 6,
+				"language": 1,
+			},
+		},
+	}
+
+	jsonData, _ := json.Marshal(customChannelsData)
+	if err := os.WriteFile(customChannelsFile, jsonData, 0644); err != nil {
+		t.Fatalf("Failed to write custom channels file: %v", err)
+	}
+
+	origCustomFile := config.Cfg.CustomChannelsFile
+	config.Cfg.CustomChannelsFile = customChannelsFile
+	defer func() {
+		config.Cfg.CustomChannelsFile = origCustomFile
+		television.InitCustomChannels()
+	}()
+	television.InitCustomChannels()
+
+	app := fiber.New()
+	app.Get("/live/:quality/:id", LiveQualityHandler)
+
+	req := httptest.NewRequest("GET", "/live/hls/cc_my_stream.m3u8?q=high", nil)
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("app.Test failed: %v", err)
+	}
+	if resp.StatusCode != fiber.StatusFound {
+		t.Errorf("expected status %d, got %d", fiber.StatusFound, resp.StatusCode)
+	}
+	if loc := resp.Header.Get("Location"); loc != "https://example.com/live/stream.m3u8" {
+		t.Errorf("expected Location https://example.com/live/stream.m3u8, got %q", loc)
 	}
 }
 
@@ -462,20 +509,43 @@ func TestFaviconHandler(t *testing.T) {
 }
 
 func TestPlaylistHandler(t *testing.T) {
-	type args struct {
-		c *fiber.Ctx
-	}
+	app := fiber.New()
+	app.Get("/playlist.m3u", PlaylistHandler)
+
 	tests := []struct {
-		name    string
-		args    args
-		wantErr bool
+		name             string
+		url              string
+		expectedLocation string
 	}{
-		// No test cases - complex handler function
+		{
+			name:             "NoParams",
+			url:              "/playlist.m3u",
+			expectedLocation: "/channels?type=m3u&q=&c=&l=&sg=&sub=&format=",
+		},
+		{
+			name:             "WithQualityAndFormat",
+			url:              "/playlist.m3u?q=high&format=hls",
+			expectedLocation: "/channels?type=m3u&q=high&c=&l=&sg=&sub=&format=hls",
+		},
+		{
+			name:             "AllParams",
+			url:              "/playlist.m3u?q=high&c=split&l=Telugu,Hindi&sg=News&sub=hide&format=hls",
+			expectedLocation: "/channels?type=m3u&q=high&c=split&l=Telugu,Hindi&sg=News&sub=hide&format=hls",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := PlaylistHandler(tt.args.c); (err != nil) != tt.wantErr {
-				t.Errorf("PlaylistHandler() error = %v, wantErr %v", err, tt.wantErr)
+			req := httptest.NewRequest("GET", tt.url, nil)
+			resp, err := app.Test(req)
+			if err != nil {
+				t.Fatalf("app.Test failed: %v", err)
+			}
+			if resp.StatusCode != fiber.StatusFound {
+				t.Errorf("expected status %d, got %d", fiber.StatusFound, resp.StatusCode)
+			}
+			loc := resp.Header.Get("Location")
+			if loc != tt.expectedLocation {
+				t.Errorf("expected Location %q, got %q", tt.expectedLocation, loc)
 			}
 		})
 	}
@@ -792,6 +862,7 @@ func TestChannelsHandlerM3UDRM(t *testing.T) {
 		isDRM         bool
 		enableDRM     bool
 		quality       string
+		format        string
 		expectedURL   string
 		expectedProps string
 	}{
@@ -800,6 +871,7 @@ func TestChannelsHandlerM3UDRM(t *testing.T) {
 			isDRM:         false,
 			enableDRM:     true,
 			quality:       "",
+			format:        "",
 			expectedURL:   "http://localhost:5001/live/123.m3u8",
 			expectedProps: "",
 		},
@@ -808,6 +880,7 @@ func TestChannelsHandlerM3UDRM(t *testing.T) {
 			isDRM:         false,
 			enableDRM:     true,
 			quality:       "high",
+			format:        "",
 			expectedURL:   "http://localhost:5001/live/high/123.m3u8",
 			expectedProps: "",
 		},
@@ -816,6 +889,7 @@ func TestChannelsHandlerM3UDRM(t *testing.T) {
 			isDRM:         true,
 			enableDRM:     true,
 			quality:       "",
+			format:        "",
 			expectedURL:   "http://localhost:5001/live/mpd/123",
 			expectedProps: "#KODIPROP:inputstream=inputstream.adaptive\n#KODIPROP:inputstream.adaptive.manifest_type=mpd\n#KODIPROP:inputstream.adaptive.license_type=com.widevine.alpha\n#KODIPROP:inputstream.adaptive.license_key=http://localhost:5001/live/key/123\n",
 		},
@@ -824,6 +898,7 @@ func TestChannelsHandlerM3UDRM(t *testing.T) {
 			isDRM:         true,
 			enableDRM:     true,
 			quality:       "high",
+			format:        "",
 			expectedURL:   "http://localhost:5001/live/mpd/123?q=high",
 			expectedProps: "#KODIPROP:inputstream=inputstream.adaptive\n#KODIPROP:inputstream.adaptive.manifest_type=mpd\n#KODIPROP:inputstream.adaptive.license_type=com.widevine.alpha\n#KODIPROP:inputstream.adaptive.license_key=http://localhost:5001/live/key/123?q=high\n",
 		},
@@ -832,7 +907,44 @@ func TestChannelsHandlerM3UDRM(t *testing.T) {
 			isDRM:         true,
 			enableDRM:     false,
 			quality:       "",
+			format:        "",
 			expectedURL:   "http://localhost:5001/live/123.m3u8",
+			expectedProps: "",
+		},
+		{
+			name:          "DRMChannelDRMEnabledWithFormatHLS",
+			isDRM:         true,
+			enableDRM:     true,
+			quality:       "",
+			format:        "hls",
+			expectedURL:   "http://localhost:5001/live/hls/123",
+			expectedProps: "",
+		},
+		{
+			name:          "DRMChannelDRMEnabledWithFormatHLSAndQuality",
+			isDRM:         true,
+			enableDRM:     true,
+			quality:       "high",
+			format:        "hls",
+			expectedURL:   "http://localhost:5001/live/hls/123?q=high",
+			expectedProps: "",
+		},
+		{
+			name:          "NonDRMChannelWithFormatHLS",
+			isDRM:         false,
+			enableDRM:     true,
+			quality:       "",
+			format:        "hls",
+			expectedURL:   "http://localhost:5001/live/hls/123",
+			expectedProps: "",
+		},
+		{
+			name:          "NonDRMChannelWithFormatHLSAndQuality",
+			isDRM:         false,
+			enableDRM:     true,
+			quality:       "high",
+			format:        "hls",
+			expectedURL:   "http://localhost:5001/live/hls/123?q=high",
 			expectedProps: "",
 		},
 	}
@@ -870,7 +982,7 @@ func TestChannelsHandlerM3UDRM(t *testing.T) {
 			}
 
 			// Generate playlist
-			playlist := GenerateM3UPlaylist(mockChannels, hostURL, tc.quality, "", "", "", "")
+			playlist := GenerateM3UPlaylist(mockChannels, hostURL, tc.quality, "", "", "", "", tc.format)
 
 			// Verify the output contains the expected elements
 			if !strings.Contains(playlist, tc.expectedURL) {
@@ -957,7 +1069,7 @@ func TestGenerateM3UPlaylistSubscriptionFilter(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			playlist := GenerateM3UPlaylist(mockChannels, hostURL, "", "", "", "", tc.subFilter)
+			playlist := GenerateM3UPlaylist(mockChannels, hostURL, "", "", "", "", tc.subFilter, "")
 
 			// Assert on tvg-id rather than counting lines, so that dropping
 			// the wrong channel fails instead of passing on the right count
