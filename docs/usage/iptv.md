@@ -73,6 +73,14 @@ JioTV Go offers a convenient M3U playlist endpoint to enhance your IPTV experien
 
    Any other value, including leaving `sub` out entirely, returns the full playlist.
 
+8. If you would like to force HLS streams for all channels (including channels that would otherwise use MPD/DASH when DRM is enabled), append the `format=hls` query parameter:
+
+   ```
+   http://localhost:5001/playlist.m3u?format=hls
+   ```
+
+   This generates HLS stream URLs (`/live/hls/{id}`) for all channels and omits Widevine DRM `#KODIPROP` tags, which is ideal for IPTV players that prefer HLS or do not support Widevine DRM.
+
 For both specific quality and split category, append the `q=` and `c=` query parameters:
 
 ```
@@ -83,6 +91,12 @@ You can also combine the language grouping, language filtering and subscription 
 
 ```
 http://localhost:5001/playlist.m3u?c=language&l=Hindi,Kannada,Marathi&sub=hide
+```
+
+Or force HLS format with custom quality and language filters:
+
+```
+http://localhost:5001/playlist.m3u?q=high&l=Telugu,English,Hindi&format=hls
 ```
 
 

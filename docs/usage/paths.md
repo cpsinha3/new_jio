@@ -68,11 +68,13 @@ Valid genres: `Entertainment`, `Movies`, `Kids`, `Sports`, `Lifestyle`, `Infotai
 
 You can also append `&sub=hide` to the path to leave out channels that require a separate subscription, or `&sub=only` to get a playlist of just those channels. Any other value, including omitting `sub`, returns every channel. This is the playlist equivalent of the "Hide channels requiring a separate subscription" checkbox on the home page.
 
+You can also append `&format=hls` to force HLS stream URLs (`/live/hls/:channel_id`) for all channels in the playlist (even when DRM is enabled on the server) and omit Widevine DRM `#KODIPROP` tags.
+
 ### M3U Playlist
 
 - **Path**: `/channels?type=m3u`
 
-The actual path for the M3U playlist. You can append `&q=<level>` to the path as [above](#m3u-playlist-alias). You can also append `&c=split` or `&sub=hide` to the path as [above](#m3u-playlist-alias).
+The actual path for the M3U playlist. You can append `&q=<level>` to the path as [above](#m3u-playlist-alias). You can also append `&c=split`, `&sub=hide`, or `&format=hls` to the path as [above](#m3u-playlist-alias).
 
 ### M3U8 URL
 
@@ -85,6 +87,12 @@ M3U8 stream file for the specified `channel_id`.
 - **Path**: `/live/:quality/:channel_id`
 
 M3U8 stream file for the specified `channel_id` with the specified `quality`. The `quality` can be `low`, `medium`, `high`, or `l`, `m`, `h`.
+
+### Forced HLS Stream URL
+
+- **Path**: `/live/hls/:channel_id`
+
+HLS stream endpoint for the specified `channel_id` for both DRM and non-DRM channels. You can also append `?q=<level>` to request a specific quality level (`low`, `medium`, `high`, `auto`, etc.).
 
 ### DRM MPD Manifest
 
