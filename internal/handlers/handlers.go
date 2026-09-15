@@ -1339,7 +1339,7 @@ func PlaylistHandler(c *fiber.Ctx) error {
 	skipGenres := c.Query("sg")
 	subFilter := c.Query("sub")
 	format := c.Query("format")
-	return c.Redirect("/channels?type=m3u&q="+quality+"&c="+splitCategory+"&l="+languages+"&sg="+skipGenres+"&sub="+subFilter+"&format="+format, fiber.StatusMovedPermanently)
+	return c.Redirect("/channels?type=m3u&q="+quality+"&c="+splitCategory+"&l="+languages+"&sg="+skipGenres+"&sub="+subFilter+"&format="+format, fiber.StatusFound)
 }
 
 // ImageHandler loads image from JioTV server

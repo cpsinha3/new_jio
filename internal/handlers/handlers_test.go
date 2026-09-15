@@ -540,8 +540,8 @@ func TestPlaylistHandler(t *testing.T) {
 			if err != nil {
 				t.Fatalf("app.Test failed: %v", err)
 			}
-			if resp.StatusCode != fiber.StatusMovedPermanently {
-				t.Errorf("expected status %d, got %d", fiber.StatusMovedPermanently, resp.StatusCode)
+			if resp.StatusCode != fiber.StatusFound {
+				t.Errorf("expected status %d, got %d", fiber.StatusFound, resp.StatusCode)
 			}
 			loc := resp.Header.Get("Location")
 			if loc != tt.expectedLocation {
