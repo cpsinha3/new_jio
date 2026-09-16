@@ -8,7 +8,7 @@
     {{ template "styling" . }}
   </head>
 
-  <body class="flex flex-col min-h-screen">
+  <body class="flex flex-col min-h-screen has-bottom-nav">
     {{ template "navbar" . }}
     <div class="flex flex-col md:flex-row flex-grow">
       {{ template "category_sidebar" . }}
@@ -40,11 +40,13 @@
       </main>
     </div>
     {{ template "login_dialog" . }}
+    {{ template "bottom_nav" . }}
     <script src="/static/internal/utils.js"></script>
     <script src="/static/internal/index.js"></script>
     <script src="/static/internal/common.js"></script>
     <script src="/static/internal/remote.js"></script>
     <script src="/static/internal/now_tiles.js"></script>
+    <script src="/static/internal/bottom_nav.js"></script>
     {{ template "footer" . }}
   </body>
 </html>
